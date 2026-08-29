@@ -64,7 +64,7 @@ flowchart TB
     end
 
     subgraph Server["Origin server (PHP-capable host)"]
-        PHP["/app3dk2.php\n(token hand-off endpoint)"]
+        PHP["/fetchkey.php\n(token hand-off endpoint)"]
     end
 
     subgraph Google["Google Cloud"]
@@ -126,13 +126,13 @@ sequenceDiagram
     participant H as Header.tsx
     participant A as App.tsx
     participant G as utils/gemini.ts
-    participant P as /app3dk2.php
+    participant P as /fetchkey.php
     participant AI as Gemini API
 
     U->>H: Type prompt, click "Generate"
     H->>A: onGenerate()
     A->>G: generateRCode(prompt, editorContent, uploadedFiles)
-    G->>P: POST /app3dk2.php (fetch token)
+    G->>P: POST /fetchkey.php (fetch token)
     P-->>G: { token, status } (JSON)
     G->>G: build dataset context from\nuploaded file previews
     G->>AI: ai.models.generateContent({ model, contents: fullPrompt })
@@ -212,7 +212,7 @@ flowchart LR
 | Styling | Tailwind CSS (via CDN `cdn.tailwindcss.com` in `index.html`) | Not a local PostCSS build — pulled at runtime |
 | Code editor | `@monaco-editor/react` | Powers the R "Code" view |
 | In‑browser R | [WebR](https://webr.r-wasm.org/) (`https://webr.r-wasm.org/latest/webr.mjs`, loaded directly from the WebR CDN, not npm) | Preloads `ggplot2` + `dplyr`; renders to an HTML `<canvas>` via `webr::canvas()` |
-| AI code generation | `@google/genai` (Gemini, model `gemini-3-pro-preview`) | Key is fetched at runtime from `/app3dk2.php`, not bundled |
+| AI code generation | `@google/genai` (Gemini, model `gemini-3-pro-preview`) | Key is fetched at runtime from `/fetchkey.php`, not bundled |
 | Icons | `lucide-react` | |
 | Charting (installed, currently unused) | `recharts` | Declared as a dependency / import‑map entry / manual chunk, but no component currently imports it — plots are produced by WebR/ggplot2 onto canvas, not Recharts |
 | Export | `jszip`, `file-saver` | Zips script + data + plots + tables for download |
@@ -230,7 +230,7 @@ v4/
 ├── constants.ts                # Default chart config, sample data, palette
 ├── types.ts                    # Shared TypeScript types (ChartConfig, AppSettings, R types, ...)
 ├── metadata.json                # App name/description
-├── app3dk2.php                 # Server-side token hand-off endpoint for Gemini (see below)
+├── fetchkey.php                 # Server-side token hand-off endpoint for Gemini (see below)
 ├── vite.config.ts              # Manual chunk-splitting build config
 ├── tsconfig.json
 ├── package.json
@@ -259,7 +259,7 @@ v4/
 - **npm** (bundled with Node) — a `package-lock.json` is committed, so `npm ci` works
 - A modern browser for development (Chrome/Edge/Firefox) — WebR requires WebAssembly + SharedArrayBuffer support, which generally means the app needs to be served with the right cross‑origin isolation headers in production (see [Deploying](#deploying))
 - Internet access at runtime: the app loads Tailwind, all its JS dependencies (in dev via `esm.sh`), and WebR itself from CDNs — it is **not** fully offline‑capable as shipped
-- A PHP‑capable host (Apache/Nginx + PHP‑FPM, or similar) **if** you want AI code generation to work in production, since the key hand‑off endpoint (`app3dk2.php`) is a PHP script, not a Vite/Node route
+- A PHP‑capable host (Apache/Nginx + PHP‑FPM, or similar) **if** you want AI code generation to work in production, since the key hand‑off endpoint (`fetchkey.php`) is a PHP script, not a Vite/Node route
 
 ## Installation
 
@@ -276,10 +276,10 @@ This installs React, Vite, Monaco, the Gemini SDK, JSZip/file-saver, etc. WebR i
 
 ## Configuring the AI code‑generation backend
 
-The "Generate" button does **not** call Gemini directly from the browser with a bundled key. Instead, `utils/gemini.ts` first calls `POST /app3dk2.php` on the same origin to obtain a token, then uses that token to call the Gemini API. This means:
+The "Generate" button does **not** call Gemini directly from the browser with a bundled key. Instead, `utils/gemini.ts` first calls `POST /fetchkey.php` on the same origin to obtain a token, then uses that token to call the Gemini API. This means:
 
-1. **Local dev**: unless you also run a PHP server alongside Vite (or point the fetch at one), `/app3dk2.php` will 404 and "Generate" will fail with *"Unable to establish secure connection to the reasoning engine."* The rest of the app (editor, WebR console, plotting, export) works without it.
-2. **Production**: `app3dk2.php` must be deployed alongside the built static assets on a PHP‑capable host, and must be edited to return a **real** Gemini API key from a server‑side secret (e.g. `getenv('API_KEY')`) instead of the current placeholder string. See [Known issues](#known-issues--things-to-verify-before-shipping) — there is also a field‑name mismatch between what this script returns and what the client currently reads that needs fixing before this will work end‑to‑end.
+1. **Local dev**: unless you also run a PHP server alongside Vite (or point the fetch at one), `/fetchkey.php` will 404 and "Generate" will fail with *"Unable to establish secure connection to the reasoning engine."* The rest of the app (editor, WebR console, plotting, export) works without it.
+2. **Production**: `fetchkey.php` must be deployed alongside the built static assets on a PHP‑capable host, and must be edited to return a **real** Gemini API key from a server‑side secret (e.g. `getenv('API_KEY')`) instead of the current placeholder string. See [Known issues](#known-issues--things-to-verify-before-shipping) — there is also a field‑name mismatch between what this script returns and what the client currently reads that needs fixing before this will work end‑to‑end.
 3. `.env.local` currently defines `GEMINI_API_KEY`, but nothing in the codebase reads it (no `import.meta.env.GEMINI_API_KEY` / `process.env.GEMINI_API_KEY` usage, and `vite.config.ts` has no `define`). If you'd rather bundle a browser‑exposed key directly (simpler, less secure — the key becomes visible to anyone who opens dev tools) instead of the PHP hand‑off, you would need to wire this variable in explicitly.
 
 ## Running in development
@@ -323,7 +323,7 @@ flowchart LR
     Chunks --> AL["app-core-logic.js"]
     Chunks --> Main["main/entry.js"]
     VR & VV & VM & VI & VU & VG & AT & AC & AV & AL & Main --> Dist["dist/assets/js/*-[hash].js"]
-    Dist --> Deploy["Deploy dist/ + app3dk2.php\nto a static + PHP host"]
+    Dist --> Deploy["Deploy dist/ + fetchkey.php\nto a static + PHP host"]
 ```
 
 ## Previewing a production build
@@ -333,13 +333,13 @@ npm run build
 npm run preview
 ```
 
-`vite preview` serves the contents of `dist/` locally (default `http://localhost:4173`) so you can sanity‑check the production bundle before deploying. Note this preview server does **not** serve `app3dk2.php` (it's a static file server), so AI generation will still fail locally unless you proxy it to a real PHP host.
+`vite preview` serves the contents of `dist/` locally (default `http://localhost:4173`) so you can sanity‑check the production bundle before deploying. Note this preview server does **not** serve `fetchkey.php` (it's a static file server), so AI generation will still fail locally unless you proxy it to a real PHP host.
 
 ## Deploying
 
 1. Run `npm run build`.
-2. Upload the contents of `dist/` **plus** `app3dk2.php` (updated with a real, server‑side‑held Gemini key) to your web host's document root.
-3. Ensure the host can execute PHP for `app3dk2.php` (a purely static host such as plain S3/CloudFront or GitHub Pages will not run it — you'd need to reimplement the token hand‑off as, e.g., a small serverless function instead).
+2. Upload the contents of `dist/` **plus** `fetchkey.php` (updated with a real, server‑side‑held Gemini key) to your web host's document root.
+3. Ensure the host can execute PHP for `fetchkey.php` (a purely static host such as plain S3/CloudFront or GitHub Pages will not run it — you'd need to reimplement the token hand‑off as, e.g., a small serverless function instead).
 4. Because WebR relies on WebAssembly and threading, serve the app over **HTTPS** and confirm cross‑origin isolation (`Cross-Origin-Opener-Policy: same-origin`, `Cross-Origin-Embedder-Policy: require-corp` or `credentialless`) if you see WebR failing to initialize in production — this is a common WebR deployment gotcha and is worth testing explicitly on the chosen host.
 5. The app also loads external resources at runtime (Tailwind CDN, WebR CDN, and — outside of the `npm run build` bundle path — `esm.sh` in `index.html`'s import‑map, which Vite's bundler otherwise supersedes for the built output); make sure your production CSP, if any, allows these origins.
 
@@ -359,8 +359,8 @@ npm run preview
 
 These are things worth confirming/fixing during review — none of them block local development of the editor itself, but they will affect production behavior:
 
-- **Token field name mismatch**: `app3dk2.php` returns `{"token": ..., "status": "initialized"}`, but `utils/gemini.ts` reads `payload.kok`. As written, the AI "Generate" feature will always fail in production with *"Handshake payload missing expected 'token' property."* — align the PHP response key with what the client reads (or vice‑versa) before relying on this endpoint.
-- **Placeholder secret in `app3dk2.php`**: `$secretToken = "SERVICE_TOKEN_PLACEHOLDER";` needs to be replaced with a real Gemini API key sourced from a server‑side environment variable (the script's own comment suggests `getenv('API_KEY')`), and the endpoint should have session/CSRF protection added, per its own docblock, before going live.
+- **Token field name mismatch**: `fetchkey.php` returns `{"token": ..., "status": "initialized"}`, but `utils/gemini.ts` reads `payload.kok`. As written, the AI "Generate" feature will always fail in production with *"Handshake payload missing expected 'token' property."* — align the PHP response key with what the client reads (or vice‑versa) before relying on this endpoint.
+- **Placeholder secret in `fetchkey.php`**: `$secretToken = "SERVICE_TOKEN_PLACEHOLDER";` needs to be replaced with a real Gemini API key sourced from a server‑side environment variable (the script's own comment suggests `getenv('API_KEY')`), and the endpoint should have session/CSRF protection added, per its own docblock, before going live.
 - **`GEMINI_API_KEY` in `.env.local` is currently unused** by any source file — decide whether the app should read it directly (simpler local dev, but exposes the key client‑side) or keep the server‑side hand‑off pattern and drop this variable.
 - **`@vitejs/plugin-react` is a devDependency but is not registered as a plugin in `vite.config.ts`** — JSX/Fast Refresh currently works because esbuild handles the default JSX transform, but you likely want the official plugin enabled explicitly for full Fast Refresh support and future-proofing.
 - **`recharts` is installed and chunked but not imported anywhere** in the current source — either it's reserved for planned features, or it can be dropped to shrink the dependency graph and the `vendor-viz` chunk.
